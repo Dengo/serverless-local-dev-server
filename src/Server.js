@@ -97,11 +97,7 @@ class Server {
           Object.assign(invocationError, { stderr, stdout })
           reject(invocationError)
         } else {
-          if (idx > -1) {
-            resolve(stdout.substr(idx))
-          } else {
-            resolve(stdout)
-          }
+          resolve(stdout)
         }
       })
     })
