@@ -2,16 +2,18 @@
 
 const Express = require('express')
 const BodyParser = require('body-parser')
+const exec = require('child_process').exec
 const path = require('path')
 const getEndpoints = require('./endpoints/get')
 
 class Server {
-  constructor () {
+  constructor (options) {
+    this.options = Object.assign({ port: 5005 }, options)
     this.functions = []
     this.log = console.log
   }
   // Starts the server
-  start (port) {
+  start () {
     if (this.functions.length === 0) {
       this.log('No Lambdas with Alexa-Skill or HTTP events found')
       return
@@ -21,13 +23,13 @@ class Server {
     this.functions.forEach(func =>
       func.endpoints.forEach(endpoint => this._attachEndpoint(func, endpoint))
     )
-    this.app.listen(port, _ => {
-      this.log(`Listening on port ${port} for requests 🚀`)
+    this.app.listen(this.options.port, _ => {
+      this.log(`Listening on port ${this.options.port} for requests 🚀`)
       this.log('----')
       this.functions.forEach(func => {
         this.log(`${func.name}:`)
         func.endpoints.forEach(endpoint => {
-          this.log(`  ${endpoint.method} http://localhost:${port}${endpoint.path}`)
+          this.log(`  ${endpoint.method} http://localhost:${this.options.port}${endpoint.path}`)
         })
       })
       this.log('----')
@@ -42,8 +44,7 @@ class Server {
         name: name,
         config: serverlessConfig.functions[name],
         handlerModulePath: path.join(servicePath, handlerParts[0]),
-        handlerFunctionName: handlerParts[1],
-        environment: Object.assign({}, serverlessConfig.provider.environment, functionConfig.environment)
+        handlerFunctionName: handlerParts[1]
       }
     }).map(func =>
       Object.assign({}, func, { endpoints: getEndpoints(func) })
@@ -69,7 +70,9 @@ class Server {
         endpoint.handleLambdaSuccess(response, result)
       }).catch(error => {
         this.log(` ➡ Failure: ${error.message}`)
-        if (process.env.SLS_DEBUG) console.error(error.stack)
+        if (process.env.SLS_DEBUG) {
+          console.error(error.stderr || error.stdout || error.stack)
+        }
         endpoint.handleLambdaFailure(response, error)
       })
     })
@@ -77,16 +80,30 @@ class Server {
   // Loads and executes the Lambda handler
   _executeLambdaHandler (func, event) {
     return new Promise((resolve, reject) => {
-      // Set new environment variables
-      Object.assign(process.env, { IS_LOCAL: true }, func.environment)
-
-      // Load function and variables
-      let handle = require(func.handlerModulePath)[func.handlerFunctionName]
-      let context = { succeed: resolve, fail: reject }
-      let callback = (error, result) => (!error) ? resolve(result) : reject(error)
-
-      // Execute it!
-      handle(event, context, callback)
+      let data = JSON.stringify(event)
+      var command = `serverless invoke local -f ${func.name} -d '${data}'`
+      if (this.options.stage) {
+        command += ` --stage ${this.options.stage}`
+      }
+      if (this.options.region) {
+        command += ` --region ${this.options.region}`
+      }
+      if (process.env.SLS_DEBUG) {
+        command = `SLS_DEBUG=${process.env.SLS_DEBUG} ${command}`
+      }
+      exec(command, (error, stdout, stderr) => {
+        if (error) {
+          let invocationError = new Error(`Error invoking ${func.name} function`)
+          Object.assign(invocationError, { stderr, stdout })
+          reject(invocationError)
+        } else {
+          if (idx > -1) {
+            resolve(stdout.substr(idx))
+          } else {
+            resolve(stdout)
+          }
+        }
+      })
     })
   }
 }

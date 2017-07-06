@@ -12,7 +12,9 @@ class ServerlessPlugin {
         usage: 'Runs a local dev server for Alexa-Skill and HTTP functions',
         lifecycleEvents: [ 'start' ],
         options: {
-          port: { usage: 'Port to listen on', shortcut: 'p' }
+          port: { usage: 'Port to listen on', shortcut: 'p' },
+          stage: { usage: 'Stage of the service', shortcut: 's' },
+          region: { usage: 'Region of the service', shortcut: 'r' }
         }
       }
     }
@@ -23,10 +25,10 @@ class ServerlessPlugin {
   }
 
   start () {
-    let server = new Server()
+    let server = new Server(this.options)
     server.log = this.serverless.cli.log.bind(this.serverless.cli)
     server.setFunctions(this.serverless.service, this.serverless.config.servicePath)
-    server.start(this.options.port || 5005)
+    server.start()
   }
 }
 
